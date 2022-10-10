@@ -1,92 +1,66 @@
 import OrderBookDiffs from './OrderBookDiffs.js'
 import OrderBookSnapshot from './OrderBookSnapshot.js'
-import { until, clearScreen } from '../utils.js'
-
-/**
- * TODO:
- * - Create OrderSide class and moving processing logic (tree manipulation) there
- * - [stretch] Move printing logic into different class & maybe inject it via constructor for testing
- * - [stretch] allow injecting OrderBookDiffs & OrderBookSnapshot object via constructor for testing
- */
+import OrderBookSide from './OrderBookSide.js'
+import OrderBookPrinterSimple from './OrderBookPrinterSimple.js'
 
 class OrderBook {
-  BUFFER_SIZE = 3
-  BUFFER_TIMEOUT = 100
+  DEFAULT_PRINT_DEPTH = 5
 
-  constructor() {
-    this.book = { lastUpdateId: 0, bids: [], asks: [] }
-    this.diffs = new OrderBookDiffs()
-    this.snapshot = new OrderBookSnapshot()
-    this.isWaitingFirstDiff = true
+  constructor({ diffs, snapshot, bids, asks, printer } = {}) {
+    this.diffs = diffs || new OrderBookDiffs()
+    this.snapshot = snapshot || new OrderBookSnapshot()
+    this.bids = bids || new OrderBookSide({ sort: OrderBookSide.DECR })
+    this.asks = asks || new OrderBookSide({ sort: OrderBookSide.INCR })
+    this.printer = printer || new OrderBookPrinterSimple()
+    this.isWaitingForFirstUpdate = true
+    this.isFetchingSnapshot = false
+    this.isSnapshotFetched = false
+    this.lastUpdateId = 0
   }
 
-  async bufferDiffs() {
-    await until(() => this.diffs.size() > this.BUFFER_SIZE, this.BUFFER_TIMEOUT)
-  }
-
-  async build() {
-    console.log('Waiting initial diffs buffer...')
-    await this.bufferDiffs()
-    console.log('Waiting to fetch the snapshot...')
-    this.book = await this.snapshot.get()
-    this.diffs.bus.on('process-diffs', () => this.processDiffs())
-    return this
+  // We need to wait for the buffered updates before start fetching the snapshot as per the docs
+  // https://github.com/binance/binance-spot-api-docs/blob/master/web-socket-streams.md#how-to-manage-a-local-order-book-correctly
+  build() {
+    return new Promise((resolve) => {
+      this.diffs.bus.on('update', async () => {
+        if (this.isSnapshotFetched) {
+          this.update()
+        } else if (!this.isFetchingSnapshot && !this.isSnapshotFetched) {
+          this.isFetchingSnapshot = true
+          console.log('Waiting to fetch the snapshot...')
+          let { lastUpdateId, bids, asks } = await this.snapshot.get()
+          this.lastUpdateId = lastUpdateId
+          this.bids.init(bids)
+          this.asks.init(asks)
+          this.isFetchingSnapshot = false
+          this.isSnapshotFetched = true
+          this.update()
+          resolve()
+        }
+      })
+    })
   }
 
   // Docs: https://github.com/binance/binance-spot-api-docs/blob/master/web-socket-streams.md#how-to-manage-a-local-order-book-correctly
-  processDiffs() {
+  update() {
     for (let { firstUpdateId, lastUpdateId, bids, asks } of this.diffs) {
-      if (this.isWaitingFirstDiff) {
-        if (lastUpdateId >= this.book.lastUpdateId + 1 && firstUpdateId <= this.book.lastUpdateId + 1) {
-          this.isWaitingFirstDiff = false
-          this.book.lastUpdateId = lastUpdateId
-          this.process({ side: 'bids', items: bids })
-          this.process({ side: 'asks', items: asks })
+      if (this.isWaitingForFirstUpdate) {
+        if (lastUpdateId >= this.lastUpdateId + 1 && firstUpdateId <= this.lastUpdateId + 1) {
+          this.isWaitingForFirstUpdate = false
+          this.lastUpdateId = lastUpdateId
+          this.bids.update(bids)
+          this.asks.update(asks)
         }
-      } else if (firstUpdateId === this.book.lastUpdateId + 1) {
-        this.book.lastUpdateId = lastUpdateId
-        this.process({ side: 'bids', items: bids })
-        this.process({ side: 'asks', items: asks })
+      } else if (firstUpdateId === this.lastUpdateId + 1) {
+        this.lastUpdateId = lastUpdateId
+        this.bids.update(bids)
+        this.asks.update(asks)
       }
     }
   }
 
-  // Insipred by:
-  // - https://github.com/fasenderos/hft-limit-order-book/blob/a0fba7342ac36d2dd03df07be5127f3fc59f9476/src/orderside.ts#L40
-  // - https://steemit.com/utopian-io/@steempytutorials/part-2-manage-local-steem-orderbook-via-websocket-stream-from-exchange
-  // - https://web.archive.org/web/20110219163448/http://howtohft.wordpress.com/2011/02/15/how-to-build-a-fast-limit-order-book/
-  process({ side, items }) {
-    for (let [price, quantity] of items) {
-      if (this.book[side].get(price)) {
-        if (quantity === 0) {
-          this.book[side] = this.book[side].remove(price)
-        } else {
-          this.book[side].get(price).value = [price, quantity]
-        }
-      } else if (quantity === 0) {
-        continue
-      } else {
-        this.book[side] = this.book[side].insert(price, [price, quantity])
-      }
-    }
-  }
-
-  print(depth) {
-    clearScreen()
-    console.log(
-      this.book.asks.values
-        .slice(0, depth)
-        .reverse()
-        .map(([price, quantity]) => [price.toFixed(2), quantity.toFixed(5)])
-        .map(([price, quantity]) => `\x1b[31m${price}\x1b[0m  ${quantity}`)
-        .join('\n') +
-        '\n' +
-        this.book.bids.values
-          .slice(0, depth)
-          .map(([price, quantity]) => [price.toFixed(2), quantity.toFixed(5)])
-          .map(([price, quantity]) => `\x1b[32m${price}\x1b[0m  ${quantity}`)
-          .join('\n')
-    )
+  print(depth = this.DEFAULT_PRINT_DEPTH) {
+    this.printer.print({ asks: this.asks.top(depth), bids: this.bids.top(depth) })
   }
 }
 

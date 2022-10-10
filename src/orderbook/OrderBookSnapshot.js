@@ -1,5 +1,4 @@
 import https from 'node:https'
-import createRBTree from '../data-structures/RBTree.js'
 
 class OrderBookSnapshot {
   ENDPOINT = 'https://api.binance.com/api/v3/depth'
@@ -12,29 +11,6 @@ class OrderBookSnapshot {
     endpoint = endpoint ?? this.ENDPOINT
     depth = depth ?? this.DEPTH
     this.url = `${endpoint}?symbol=${symbol}&limit=${depth}`
-  }
-
-  parseSnapshot(json) {
-    const { lastUpdateId, bids, asks } = json
-    let snapshot = {
-      lastUpdateId,
-      bids: createRBTree((a, b) => b - a),
-      asks: createRBTree((a, b) => a - b)
-    }
-
-    bids.forEach((x) => {
-      x[0] -= 0 // str to num faster than parseFloat
-      x[1] -= 0 // str to num faster than parseFloat
-      snapshot.bids = snapshot.bids.insert(x[0], [x[0], x[1]])
-    })
-
-    asks.forEach((x) => {
-      x[0] -= 0 // str to num faster than parseFloat
-      x[1] -= 0 // str to num faster than parseFloat
-      snapshot.asks = snapshot.asks.insert(x[0], [x[0], x[1]])
-    })
-
-    return snapshot
   }
 
   get() {
@@ -61,7 +37,7 @@ class OrderBookSnapshot {
               } catch (e) {
                 return reject(new Error('Could not parse snapshot data: Invalid json'))
               }
-              resolve(this.parseSnapshot(json))
+              resolve(json)
             })
           })
           .on('timeout', () => {

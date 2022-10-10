@@ -5,7 +5,8 @@ try {
   const DEFAULT_SNAPSHOT_DEPTH = 5
   const timeout = Number.parseInt(process.env['TIMEOUT'] ?? DEFAULT_TIMEOUT, 10) || DEFAULT_TIMEOUT
   const depth = Number.parseInt(process.env['DEPTH'] ?? DEFAULT_SNAPSHOT_DEPTH, 10) || DEFAULT_SNAPSHOT_DEPTH
-  const orderBook = await new OrderBook().build()
+  const orderBook = new OrderBook()
+  await orderBook.build()
   orderBook.print(depth)
   setInterval(() => orderBook.print(depth), timeout)
 } catch (e) {
