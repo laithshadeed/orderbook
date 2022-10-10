@@ -1,0 +1,27 @@
+{
+  "name": "orderbook",
+  "version": "0.0.1",
+  "description": "Print local order book",
+  "type": "module",
+  "main": "src/run.js",
+  "scripts": {
+    "print": "TIMEOUT=10000 node ./src/run.js",
+    "print-debug": "TIMEOUT=1000 DEPTH=3 node --inspect ./src/run.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/laithshadeed/orderbook.git"
+  },
+  "keywords": [
+    "orderbook"
+  ],
+  "author": "Laith Shadeed",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/laithshadeed/orderbook/issues"
+  },
+  "homepage": "https://github.com/laithshadeed/orderbook",
+  "dependencies": {
+    "ws": "^8.9.0"
+  }
+}

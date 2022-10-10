@@ -1,0 +1,7 @@
+*.swp
+node_modules
+*.out
+*.class
+*.plist
+*.log
+bazel-*
